@@ -45,19 +45,47 @@ namespace ReadATextFile
 
 
                     // Create SQL connection 
-                    // TODO Need to figure out DB SQL Server Connection 
-                    //SqlConnection conn = new SqlConnection();
 
-                    // Create SQL Command 
-                    // SqlCommand cmd = new SqlCommand("dbo.Procedure", conn);
-                    // cmd.CommandType = CommandType.StoredProcedure;
+
+                    using (SqlConnection conn = new SqlConnection(@"Data Source=nc-dc1;Initial Catalog=MockApp;User Id=PIFUser;Password=UserPIF;MultipleActiveResultSets=True"))
+                    {
+                        string insertString = "INSERT into dbo.Table_1 (GoodBad,DateTime,Color,Processed,PercentGood) VALUES(@GoodBad,@DateTime,@Color,@Processed,@PercentGood)";
+
+                        using (SqlCommand cmd = new SqlCommand(insertString))
+                        {
+                            cmd.Connection = conn;
+                            cmd.CommandType = CommandType.Text;
+                            cmd.Parameters.Add("@GoodBad", SqlDbType.VarChar, 10).Value = product.GoodBad;
+                            cmd.Parameters.Add("@DateTime", SqlDbType.DateTime).Value = product.DateTime;
+                            cmd.Parameters.Add("@Color", SqlDbType.VarChar, 10).Value = product.Color;
+                            cmd.Parameters.Add("@Processed", SqlDbType.VarChar, 10).Value = product.Processed;
+                            cmd.Parameters.Add("@PercentGood", SqlDbType.Decimal, 3).Value = product.PercentGood;
+                            try
+                            {
+                                conn.Open();
+                                cmd.ExecuteNonQuery();
+                            }
+                            catch (Exception ex)
+                            {
+                                throw new Exception(ex.ToString());
+                            }
+                            finally
+                            {
+                                cmd.Dispose();
+                                conn.Close();
+                            }
+                        }
+                    }
+
+
+
 
                     // Create and set parameters for sending to DB
-                    //SqlParameter parameterGoodBad = new SqlParameter("@GoodBad", SqlDbType.VarChar, 50);
-                    //SqlParameter parameterDateTime = new SqlParameter("@DateTime", SqlDbType.DateTime, 50);
-                    //SqlParameter parameterColor = new SqlParameter("@Color", SqlDbType.VarChar, 50);
-                    //SqlParameter parameterProcessed = new SqlParameter("@Processed", SqlDbType.VarChar, 50);
-                    //SqlParameter parameterPercentGood = new SqlParameter("@PercentGood", SqlDbType.Decimal, 50);
+                    //SqlParameter parameterGoodBad = new SqlParameter("@GoodBad", SqlDbType.VarChar, 10);
+                    //SqlParameter parameterDateTime = new SqlParameter("@DateTime", SqlDbType.DateTime);
+                    //SqlParameter parameterColor = new SqlParameter("@Color", SqlDbType.VarChar, 10);
+                    //SqlParameter parameterProcessed = new SqlParameter("@Processed", SqlDbType.VarChar, 10);
+                    //SqlParameter parameterPercentGood = new SqlParameter("@PercentGood", SqlDbType.Decimal, 18,0);
 
                     //parameterGoodBad.Value = product.GoodBad;
                     //parameterDateTime.Value = product.DateTime;
@@ -99,8 +127,8 @@ namespace ReadATextFile
 
             }
 
-         Console.ReadKey();
-            
+            Console.ReadKey();
+
         }
     }
 }
