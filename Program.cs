@@ -1,106 +1,122 @@
 ﻿using System;
-using System.Data;
 using System.IO;
-using DataParse;
+using System.Data;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Data.SqlClient;
-
+using DataParse;
 
 namespace ReadATextFile
 {
-    class Program
+    public class Program
     {
-        // Folder for now, until have actual file location
-        static readonly string rootFolder = @"C:\Users\hfarrell\Desktop\TestTextFiles\";
-
-        static void Main(string[] args)
+        public static void Main(string[] args)
         {
-            // Opens and reads every file in the given folder
-            foreach (string file in Directory.EnumerateFiles(rootFolder, "*.txt"))
-            {
-                // File being read from folder
-                if (File.Exists(file))
+            CreateHostBuilder(args).Build().Run();
+        }
+
+        public static IHostBuilder CreateHostBuilder(string[] args) =>
+            Host.CreateDefaultBuilder(args)
+                .UseWindowsService()
+                .ConfigureServices((hostContext, services) =>
                 {
-                    // Read entire text file content in one string
-                    string text = File.ReadAllText(file);
+                    services.AddLogging(config =>
+                    {
+                        // For simplicity, we're adding console logging. In a real-world scenario, you might use other loggers.
+                        config.AddConsole();
+                    });
+                    services.AddHostedService<FileProcessorService>();
+                });
+    }
 
-                    // Split string into an array for parsing
-                    text.ToArray();
-                    string[] values = text.Split(',');
+    public class FileProcessorService : BackgroundService
+    {
+        private const string rootFolder = @"C:\Users\hfarrell\Desktop\TestTextFiles\";
+        private const string connectionString = "Data Source=oh-dc1;Initial Catalog=SEC_Common;User Id=PIFUser;Password=UserPIF;MultipleActiveResultSets=True";
+        private readonly ILogger<FileProcessorService> _logger;
 
-                    // Test console print.
-                    Console.WriteLine("Text file being read: " + text + "\n");
+        public FileProcessorService(ILogger<FileProcessorService> logger)
+        {
+            _logger = logger;
+        }
 
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        {
+            _logger.LogInformation("FileProcessorService started.");
 
-                    // Parse the text into Product object to be saved to SQL database
-                    // TODO Figure out the structure of the text/log file
-                    Product product = new Product();
-                    product.GoodBad = values[0].ToString();
-                    product.DateTime = DateTime.Parse(values[1].ToString());
-                    product.Color = values[2].ToString();
-                    product.Processed = Boolean.Parse(values[3].ToString());
-                    product.PercentGood = Decimal.Parse(values[4].ToString());
-                    // Test console print
-                    Console.WriteLine(String.Format("Here is the object being saved to the database: \nGood/Bad?: {0}\nDate/Time: {1}\nColor: {2}\n" +
-                        "Processed: {3}\nPercentageGood: {4}\n\n", product.GoodBad, product.DateTime, product.Color, product.Processed, product.PercentGood));
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                try
+                {
+                    foreach (string filePath in Directory.EnumerateFiles(rootFolder, "*.txt"))
+                    {
+                        Product product = ParseProductFromFile(filePath);
 
-
-                    // Create SQL connection 
-                    // TODO Need to figure out DB SQL Server Connection 
-                    //SqlConnection conn = new SqlConnection();
-
-                    // Create SQL Command 
-                    // SqlCommand cmd = new SqlCommand("dbo.Procedure", conn);
-                    // cmd.CommandType = CommandType.StoredProcedure;
-
-                    // Create and set parameters for sending to DB
-                    //SqlParameter parameterGoodBad = new SqlParameter("@GoodBad", SqlDbType.VarChar, 50);
-                    //SqlParameter parameterDateTime = new SqlParameter("@DateTime", SqlDbType.DateTime, 50);
-                    //SqlParameter parameterColor = new SqlParameter("@Color", SqlDbType.VarChar, 50);
-                    //SqlParameter parameterProcessed = new SqlParameter("@Processed", SqlDbType.VarChar, 50);
-                    //SqlParameter parameterPercentGood = new SqlParameter("@PercentGood", SqlDbType.Decimal, 50);
-
-                    //parameterGoodBad.Value = product.GoodBad;
-                    //parameterDateTime.Value = product.DateTime;
-                    //parameterColor.Value = product.Color;
-                    //parameterProcessed.Value = product.Processed;
-                    //parameterPercentGood.Value = product.PercentGood;
-
-                    // Add parameters to command
-                    //cmd.Parameters.Add(parameterGoodBad);
-                    //cmd.Parameters.Add(parameterDateTime);
-                    //cmd.Parameters.Add(parameterColor);
-                    //cmd.Parameters.Add(parameterProcessed);
-                    //cmd.Parameters.Add(parameterPercentGood);
-
-                    // Try sending to DB
-                    //try
-                    //{
-                    //    conn.Open();
-                    //    cmd.ExecuteNonQuery();
-                    //}
-                    //catch (Exception ex)
-                    //{
-                    //    throw new Exception(ex.ToString());
-                    //}
-                    //finally
-                    //{
-                    //    cmd.Dispose();
-                    //    conn.Close();
-                    //}
-
-
-                    // Delete file from folder once finished processing
-                    //File.Delete(file);
-
-
+                        if (product != null)
+                        {
+                            SaveProductToDatabase(product);
+                            File.Delete(filePath);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError($"An error occurred: {ex.Message}");
                 }
 
-
-
+                await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
             }
 
-         Console.ReadKey();
-            
+            _logger.LogInformation("FileProcessorService is stopping.");
+        }
+
+        private Product ParseProductFromFile(string filePath)
+        {
+            if (!File.Exists(filePath))
+                return null;
+
+            string fileContent = File.ReadAllText(filePath);
+            _logger.LogInformation($"Text file being read: {fileContent}");
+
+            string[] values = fileContent.Split(',');
+
+            if (values.Length != 5)
+            {
+                _logger.LogWarning($"Invalid data format in {filePath}. Expected 5 values.");
+                return null;
+            }
+
+            return new Product
+            {
+                GoodBad = values[0],
+                DateTime = DateTime.Parse(values[1]),
+                Color = values[2],
+                Processed = Boolean.Parse(values[3]),
+                PercentGood = Decimal.Parse(values[4])
+            };
+        }
+
+        private void SaveProductToDatabase(Product product)
+        {
+            _logger.LogInformation($"Saving product to database: Good/Bad? {product.GoodBad}, Date/Time: {product.DateTime}, Color: {product.Color}, Processed: {product.Processed}, PercentageGood: {product.PercentGood}");
+
+            using (SqlConnection connection = new SqlConnection(connectionString))
+            using (SqlCommand command = new SqlCommand("dbo.Procedure", connection))
+            {
+                command.CommandType = CommandType.StoredProcedure;
+
+                command.Parameters.AddWithValue("@GoodBad", product.GoodBad);
+                command.Parameters.AddWithValue("@DateTime", product.DateTime);
+                command.Parameters.AddWithValue("@Color", product.Color);
+                command.Parameters.AddWithValue("@Processed", product.Processed);
+                command.Parameters.AddWithValue("@PercentGood", product.PercentGood);
+
+                connection.Open();
+                command.ExecuteNonQuery();
+            }
         }
     }
 }
