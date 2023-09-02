@@ -13,11 +13,11 @@ namespace ReadATextFile
 {
     public class Program
     {
+        #region Setting up to run as service 
         public static void Main(string[] args)
         {
             CreateHostBuilder(args).Build().Run();
         }
-
         public static IHostBuilder CreateHostBuilder(string[] args) =>
             Host.CreateDefaultBuilder(args)
                 .UseWindowsService()
@@ -25,24 +25,27 @@ namespace ReadATextFile
                 {
                     services.AddLogging(config =>
                     {
-                        // For simplicity, we're adding console logging. In a real-world scenario, you might use other loggers.
+
                         config.AddConsole();
                     });
                     services.AddHostedService<FileProcessorService>();
                 });
     }
-
+    #endregion
     public class FileProcessorService : BackgroundService
     {
+        #region Private fields
         private const string rootFolder = @"C:\Users\hfarrell\Desktop\TestTextFiles\";
         private const string connectionString = "Data Source=oh-dc1;Initial Catalog=SEC_Common;User Id=PIFUser;Password=UserPIF;MultipleActiveResultSets=True";
         private readonly ILogger<FileProcessorService> _logger;
-
+        #endregion
+        #region Constructor
         public FileProcessorService(ILogger<FileProcessorService> logger)
         {
             _logger = logger;
         }
-
+        #endregion
+        #region Main action method
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             _logger.LogInformation("FileProcessorService started.");
@@ -72,7 +75,8 @@ namespace ReadATextFile
 
             _logger.LogInformation("FileProcessorService is stopping.");
         }
-
+        #endregion
+        #region Parsing text file
         private Product ParseProductFromFile(string filePath)
         {
             if (!File.Exists(filePath))
@@ -98,16 +102,20 @@ namespace ReadATextFile
                 PercentGood = Decimal.Parse(values[4])
             };
         }
-
+        #endregion
+        #region Database Transactions
         private void SaveProductToDatabase(Product product)
         {
             _logger.LogInformation($"Saving product to database: Good/Bad? {product.GoodBad}, Date/Time: {product.DateTime}, Color: {product.Color}, Processed: {product.Processed}, PercentageGood: {product.PercentGood}");
 
-            using (SqlConnection connection = new SqlConnection(connectionString))
-            using (SqlCommand command = new SqlCommand("dbo.Procedure", connection))
-            {
-                command.CommandType = CommandType.StoredProcedure;
+            string insertQuery = @"
+        INSERT INTO Table_1 (GoodBad, DateTime, Color, Processed, PercentGood)
+        VALUES (@GoodBad, @DateTime, @Color, @Processed, @PercentGood)
+    ";
 
+            using (SqlConnection connection = new SqlConnection(connectionString))
+            using (SqlCommand command = new SqlCommand(insertQuery, connection))
+            {
                 command.Parameters.AddWithValue("@GoodBad", product.GoodBad);
                 command.Parameters.AddWithValue("@DateTime", product.DateTime);
                 command.Parameters.AddWithValue("@Color", product.Color);
@@ -118,5 +126,6 @@ namespace ReadATextFile
                 command.ExecuteNonQuery();
             }
         }
+        #endregion
     }
 }
